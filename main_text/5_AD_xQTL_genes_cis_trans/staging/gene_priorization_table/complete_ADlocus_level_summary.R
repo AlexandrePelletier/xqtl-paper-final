@@ -1,43 +1,62 @@
 
 #Gene locus summary
-#need 5 Metadata:
+#Input needed:
 #- metadata_analysis.csv containing all exported tables paths
 #- contexts_metadata.csv containing contexts (datasets) label mapping between the different analysis/exported tables
 #- columns_metadata.tsv containing all columns to keep for the excel sheets, with associated metadata (column width, coloring..)
 #- excel_metadata.tsv containing some meta information for the excel sheet construction
 #- pattern_coloring.tsv containing all pattern to color in the excel sheet
+#- gp_coordinates_clean.txt containing the glyco protein identifier to gene link
+#- cv2f_score_dir: path to directory containing the .cv2f file for each chromosme
+#- gene_names: path to table with gene_id gene_name link
+#- ld_meta_file: path to ADSP_R4_EUR_LD ld_meta_file.tsv
+#- gene_gtf: path to genes gtf
 #1 metadata is optional
 #- long_table_columns_selection.csv to generate a long table with selected columns from the table xQTL_all_methods_overlap_with_AD_loci_unified_cs95orColocs_Pval1e5.csv.gz generated in step III 
 #(in this table each row is a variant-ADlocus-Method-context-gene_name information, and so facilitate querying informations ) 
 
-
 #install.packages(c('openxlsx'))
-setwd('main_text/5_AD_xQTL_genes_cis_trans/staging/gene_priorization_table/')
+setwd('/adpelle1/xqtl-paper-final/main_text/5_AD_xQTL_genes_cis_trans/staging/gene_priorization_table/')
 source('gene_prio_utils.R')
+
+#INPUT FILES
+metadata_analysis="metadata_analysis.csv"
+contexts_metadata="contexts_metadata.csv"
+columns_metadata="columns_metadata.tsv"
+excel_metadata="excel_metadata.tsv"
+pattern_coloring="pattern_coloring.tsv"
+gp_coordinates_clean="/data/gpQTL/gp_coordinates_clean.txt"
+cv2f_score_dir="/data/analysis_result/cv2f/score/xqtl_feature_max_allcv2f/"
+gene_names='/data/resource/references/Homo_sapiens.GRCh38.103.chr.reformatted.collapse_only.gene.region_list'
+ld_meta_file='/data/resource/ADSP_R4_EUR_LD/ld_meta_file.tsv'
+gene_gtf='/data/resource/references/Homo_sapiens.GRCh38.103.chr.reformatted.collapse_only.gene.gtf'
+
+
 
 out<-'.'
 dir.create(out)
 
 
+mtd<-fread(metadata_analysis,header = T)
+contexts<-fread(contexts_metadata)
 
 #0)prep integration####
 #harmonization of contexts names
-# contexts<-fread('contexts_metadata.csv')
+# contexts<-fread(contexts_metadata)
 #merge with coloc context
 # coloccont<-fread('colocname_to_contexts.tsv')
 # coloccont[context=='DLPFC_Klein_gpQTL',context:='DLPFC_Klein_gpQTL_unadjusted']
 # fwrite(coloccont,'colocname_to_contexts.tsv')
 # contexts<-merge(contexts,coloccont,all.x = T,by='context')
 # setdiff(coloccont$context,contexts$context)
-# fwrite(contexts,'contexts_metadata.csv')
+# fwrite(contexts,contexts_metadata)
 # #merge with Qr context name
 # #on excel
 
 #I) Prep/harmionized the exported tables for each methods/resource####
 #for each, long the table at variant context, gene level and create an unique locus-event identifier
 
-mtd<-fread('metadata_analysis.csv',header = T)
-contexts<-fread('contexts_metadata.csv')
+
 # setnames(contexts,'context_hi','context_broad')
 # mtd<-merge(mtd,unique(contexts),all.x = T,by='context')
 # fwrite(mtd[,.(`Data Type`,Cohort,Modality,context,context_broad,Method,Path)],'all_analysis_summary_tables_metadata.csv')
@@ -69,7 +88,7 @@ res_scf[,locuscontext_id:=paste(event_ID,credibleset,sep='_')]
 res_scf[,region:=gene_ID]
 fwrite(res_scf,fp(out,'res_all_single_context_finemapping_cs50orgreater.csv.gz'))
 res_scf<-fread(fp(out,'res_all_single_context_finemapping_cs50orgreater.csv.gz'))
-unique(res_scf,by='variant_ID')[alt(variant_ID)==a2]
+# unique(res_scf,by='variant_ID')[alt(variant_ID)==a2]
 table(res_scf$context)
 
 mtd[Method=='single_context_finemapping',summary_file:=fp(out,'res_all_single_context_finemapping_cs50orgreater.csv.gz')]
@@ -105,9 +124,7 @@ mtd[Method=='multi_context_finemapping',summary_file:=fp(out,'res_all_multi_cont
 # - fsusie##### 
 file.exists(file.path('/data',mtd[Method=='fSuSiE_finemapping']$Path))
 res_fs<-rbindlist(lapply(file.path('/data',mtd[Method=='fSuSiE_finemapping']$Path),function(f)fread(f)),fill = T)
-res_fs[,1:17]
-colnames(res_fs)
-res_fs[variant_ID=='chr16:30067171:G:C']$cs_id
+
 #create locus_context_id for cs95>cs70>cs50
 res_fs[,hit:=cs_coverage_0.95!=0]
 res_fs[(hit)]#everything is cs95
@@ -177,9 +194,9 @@ mtd[Method=='multi_gene_finemapping',summary_file:=fp(out,'res_all_multi_gene_fi
 
 # - the transQTL####
 
-contexts<-fread('contexts_metadata.csv')
+contexts<-fread(contexts_metadata)
 
-
+# Finemap
 res_ts<-fread(file.path('/data',mtd[Method=='trans_finemapping']$Path))
 
 table(res_ts$resource)
@@ -198,20 +215,116 @@ res_tsf[,
                                    paste0('cs50_',cs_coverage_0.5)))]
 res_tsf[,region:=gene_ID]
 
-res_tsf[,locuscontext_id:=paste(event_ID,region,credibleset,sep='_')]
+res_tsf[,locuscontext_id:=paste(event_ID,region,'trans',credibleset,sep='_')]
 res_tsf[,gene_ID:=str_extract(event_ID,'ENSG[0-9]+')]
 res_tsf[is.na(gene_ID),.(resource,variant_ID,event_ID,region)]#for gpqtl need mapping
-gpmap<-fread('/data/gpQTL/gp_coordinates_clean.txt')
+gpmap<-fread(gp_coordinates_clean)
 gpmap[str_detect(ensembl_id,';'),ensembl_id:=str_extract(ensembl_id,'ENSG[0-9]+')]
 res_tsf[is.na(gene_ID),gp_ID:=str_extract(event_ID,'gp_[0-9]+')]
 
 res_tsf[is.na(gene_ID),gene_ID:=gpmap[gp_ID,on='ID']$ensembl_id]
 res_tsf[!is.na(gp_ID)]
-res_tsf<-res_tsf[,-'gp_ID']
+res_tsf<-res_tsf[,-c('gp_ID','resource')]
 fwrite(res_tsf,fp(out,'res_all_transgene_single_context_finemapping_cs50orgreater.csv.gz'))
 res_tsf<-fread(fp(out,'res_all_transgene_single_context_finemapping_cs50orgreater.csv.gz'))
 
 mtd[Method=='trans_finemapping',summary_file:=fp(out,'res_all_transgene_single_context_finemapping_cs50orgreater.csv.gz')]
+
+
+#snuc####
+res_ts2<-mtd[Method=='trans_single_gene_snRNA',fread(file.path('/data',Path)),by='context']
+res_ts2[is.na(context )]
+setdiff(res_ts2$context,contexts$context)#OK
+
+res_ts2[,gene_ID:=str_extract(event_ID,'ENSG[0-9]+')]
+#create locus_context_id 
+res_ts2[,hit:=cs_coverage_0.95!=0,by=.(event_ID)]
+
+res_ts2f<-res_ts2[(hit)]
+res_ts2f[,credibleset:=paste0('cs95_',cs_coverage_0.95)]
+
+res_ts2f[,locuscontext_id:=paste(region_ID,event_ID,'transNoHF',credibleset,sep='_')]
+fwrite(res_ts2f,fp(out,'res_snuc_transgene_NoHF_single_context_finemapping_cs95.csv.gz'))
+res_ts2f<-fread(fp(out,'res_snuc_transgene_NoHF_single_context_finemapping_cs95.csv.gz'))
+
+mtd[Method=='trans_single_gene_snRNA',summary_file:=fp(out,'res_snuc_transgene_NoHF_single_context_finemapping_cs95.csv.gz')]
+
+#trans pQTL
+res_tspqtl<-mtd[Method=='trans_pQTL',fread(file.path('/data',Path)),by='context']
+setdiff(res_tspqtl$context,contexts$context)#OK
+
+res_tspqtl[,gene_ID:=str_extract(event_ID,'ENSG[0-9]+')]
+#create locus_context_id 
+res_tspqtl[,hit:=cs_coverage_0.95!=0,by=.(event_ID)]
+
+res_tspqtlf<-res_tspqtl[(hit)]
+res_tspqtlf[,
+         credibleset:=paste0('cs95_',cs_coverage_0.95)]
+res_tspqtlf[,locuscontext_id:=paste(region_ID,event_ID,credibleset,sep='_')]
+fwrite(res_tspqtlf,fp(out,'res_transpQTL_NoHF_single_context_finemapping_cs95.csv.gz'))
+res_tspqtlf<-fread(fp(out,'res_transpQTL_NoHF_single_context_finemapping_cs95.csv.gz'))
+
+mtd[Method=='trans_pQTL',summary_file:=fp(out,'res_transpQTL_NoHF_single_context_finemapping_cs95.csv.gz')]
+
+#trans gpQTL
+res_tsgpqtl<-mtd[Method=='trans_gpQTL',fread(file.path('/data',Path)),by='context']
+setdiff(res_tsgpqtl$context,contexts$context)#OK
+table(res_tsgpqtl$context)
+#add gene
+gpmap<-fread(gp_coordinates_clean)
+gpmap[str_detect(ensembl_id,';'),ensembl_id:=str_extract(ensembl_id,'ENSG[0-9]+')]
+res_tsgpqtl[,gp_ID:=str_extract(event_ID,'gp_[0-9]+')]
+
+res_tsgpqtl[,gene_ID:=gpmap[gp_ID,on='ID']$ensembl_id]
+res_tsgpqtl[!is.na(gp_ID)]
+res_tsgpqtl<-res_tsgpqtl[,-c('gp_ID')]
+
+#create locus_context_id 
+res_tsgpqtl[,hit:=cs_coverage_0.95!=0,by=.(event_ID)]
+
+res_tsgpqtlf<-res_tsgpqtl[(hit)]
+res_tsgpqtlf[,
+            credibleset:=paste0('cs95_',cs_coverage_0.95)]
+res_tsgpqtlf[,locuscontext_id:=paste(region_ID,event_ID,credibleset,sep='_')]
+fwrite(res_tsgpqtlf,fp(out,'res_transgpQTL_NoHF_single_context_finemapping_cs95.csv.gz'))
+res_tspqtlf<-fread(fp(out,'res_transgpQTL_NoHF_single_context_finemapping_cs95.csv.gz'))
+
+mtd[Method=='trans_gpQTL',summary_file:=fp(out,'res_transgpQTL_NoHF_single_context_finemapping_cs95.csv.gz')]
+
+#trans cca
+res_tscca<-mtd[Method=='trans_cca',fread(file.path('/data',Path)),by='context']
+
+#create locus_context_id 
+res_tscca[,hit:=cs_coverage_0.95!=0,by=.(event_ID)]
+
+res_tsccaf<-res_tscca[(hit)]
+res_tsccaf[,
+           credibleset:=paste0('cs95_',cs_coverage_0.95)]
+res_tsccaf[,locuscontext_id:=paste(event_ID,'transCCA',credibleset,sep='_')]
+fwrite(res_tsccaf,fp(out,'res_all_transCCA_single_context_finemapping_cs95.csv.gz'))
+res_tsccaf<-fread(fp(out,'res_all_transCCA_single_context_finemapping_cs95.csv.gz'))
+
+mtd[Method=='trans_cca',summary_file:=fp(out,'res_all_transCCA_single_context_finemapping_cs95.csv.gz')]
+
+#trans hotspot
+res_tshot<-mtd[Method=='trans_hotspot',fread(file.path('/data',Path)),by='context']
+res_tshot[is.na(context )]
+setdiff(res_tshot$context,contexts$context)#OK
+
+#create locus_context_id 
+res_tshot[,hit:=cs_coverage_0.95!=0,by=.(event_ID)]
+
+res_tshot<-res_tshot[(hit)]
+res_tshot[,
+          credibleset:=paste0('cs95_',cs_coverage_0.95)]
+res_tshot[,locuscontext_id:=paste(region_ID,event_ID,credibleset,sep='_')]
+fwrite(res_tshot,fp(out,'res_all_transhotspot_single_context_finemapping_cs95.csv.gz'))
+res_tshot<-fread(fp(out,'res_all_transhotspot_single_context_finemapping_cs95.csv.gz'))
+
+mtd[Method=='trans_hotspot',summary_file:=fp(out,'res_all_transhotspot_single_context_finemapping_cs95.csv.gz')]
+fwrite(mtd,metadata_analysis)
+
+
 
 # the gwas results: consolidate gwas locus with min corr 0.5 ####
 res_gw<-rbindlist(lapply(file.path('/data',mtd[Method=='AD_GWAS_finemapping']$Path),function(f)fread(f)),fill = T)
@@ -223,6 +336,14 @@ res_gw[,study:=event_ID]
 #consolidate gwas locus with min corr 0.5 res_gwf<-res_gw[(hit)]
 res_gw[,hit:=cs_coverage_0.5!=0|cs_coverage_0.7!=0|cs_coverage_0.95!=0,by=.(event_ID)]
 res_gwf<-res_gw[(hit)]
+res_gwf[,
+        credibleset:=ifelse(cs_coverage_0.95>0,paste0('cs95_',cs_coverage_0.95),
+                            ifelse(cs_coverage_0.7>0,paste0('cs70_',cs_coverage_0.7),
+                                   paste0('cs50_',cs_coverage_0.5)))]
+res_gwf[,region:=gene_ID]
+
+res_gwf[,locuscontext_id:=paste(event_ID,region,credibleset,sep='_')]
+
 fwrite(res_gwf,fp(out,'res_all_single_gwas_finemapping_cs50orgreater.csv.gz'))
 
 # 2) The non linear tables####
@@ -239,7 +360,7 @@ res[,.(molecular_trait_object_id,variant_id,pvalue,qvalue,p_bonferroni_adj,coef_
 #update in analysis_result/quantile_qtl/export/pure_qr.qtl.bonf_fdr_add_xi.classification.tsv.gz
 #edit mtd
 mtd[Method=='QR',Path:='analysis_result/quantile_qtl/export/pure_qr.qtl.bonf_fdr_add_xi.classification.tsv.gz']
-fwrite(mtd,'metadata_analysis.csv')
+fwrite(mtd,metadata_analysis)
 
 res_qr<-rbindlist(lapply(file.path('/data',unique(mtd[Method=='QR']$Path)),function(f){
   
@@ -266,13 +387,13 @@ mtd[Method=='QR',Cohort:='ROSMAP, MSBB, KNIGHT']
 mtd[Method=='QR',`Data Type`:='eQTL & pQTL']
 mtd[Method=='QR',`Modality`:='-']
 
-fwrite(mtd,'metadata_analysis.csv')
+fwrite(mtd,metadata_analysis)
 
 # the interactions tables####
 #have been corrected 
-#for 1
-interactions<-fread('/data/analysis_result/marginal_significant_qtl/cis_association/KNIGHT/eQTL/Brain/interaction/msex/xqtl_protocol_data.rnaseqc.low_expression_filtered.outlier_removed.tmm.expression.bed.bed.cis_pairs.significant_qtl.q_bonferroni_min_adjusted_events_qvalue.tsv.gz')
-max(interactions$qvalue_interaction)
+# #for 1
+# interactions<-fread('/data/analysis_result/marginal_significant_qtl/cis_association/KNIGHT/eQTL/Brain/interaction/msex/xqtl_protocol_data.rnaseqc.low_expression_filtered.outlier_removed.tmm.expression.bed.bed.cis_pairs.significant_qtl.q_bonferroni_min_adjusted_events_qvalue.tsv.gz')
+# max(interactions$qvalue_interaction)
 #for all
 #msex
 msex_summ<-rbindlist(lapply(file.path('/data',mtd[Method=='msex interaction']$Path),function(f){
@@ -289,7 +410,7 @@ msex_summ<-rbindlist(lapply(file.path('/data',mtd[Method=='msex interaction']$Pa
 msex_summ[,variant_id:=str_replace_all(variant_id,'_',':')]
 msex_summ[,gene_ID:=str_extract(molecular_trait_id,'ENSG[0-9]+')]
 msex_summ[,variant_ID:=str_replace_all(variant_id,'_',':')]
-msex_summ<-merge(msex_summ,mtd[,.(Path,context,context_hi)],by = 'Path')
+msex_summ<-merge(msex_summ,mtd[,.(Path,context,context_broad)],by = 'Path')
 msex_summ<-msex_summ[!is.na(variant_id)]
 fwrite(msex_summ,fp(out,'res_msex_interaction_summ.csv.gz'))
 
@@ -349,14 +470,13 @@ apoe_summ<-rbindlist(lapply(file.path('/data',mtd[Method=='APOE interaction']$Pa
   
 }),fill = T)
 apoe_summ
-apoe_summ<-merge(apoe_summ,mtd[,.(Path,context,context_hi)],by = 'Path')
+apoe_summ<-merge(apoe_summ,mtd[,.(Path,context,context_broad)],by = 'Path')
 apoe_summ[,gene_ID:=str_extract(molecular_trait_id,'ENSG[0-9]+')]
 apoe_summ[,variant_ID:=str_replace_all(variant_id,'_',':')]
 
 apoe_summ<-apoe_summ[!is.na(variant_id)]
 fwrite(apoe_summ,fp(out,'res_APOE_interaction_summ.csv.gz'))
 apoe_summ<-fread(fp(out,'res_APOE_interaction_summ.csv.gz'))
-apoe_summ[pvalue_APOE_interaction]
 mtd[Method=='APOE interaction',summary_file:=fp(out,'res_APOE_interaction_summ.csv.gz')]
 
 #define locus: lead SNP and variants signif in its block with r>0.1
@@ -385,8 +505,8 @@ mtd[Method=='APOE interaction',summary_file:=fp(out,'res_APOE_interaction_summ.c
 
 
 #the sn_sQTL ####
+ressqtl<-mtd[Method=='LR'&`Data Type`=='sQTL',fread(file.path('/data',Path),col.names = c('splice_site', 'variant_ID', 'pval', 'beta', 'se', 'FDR', 'if_significant', 'spliced_genes', 'gene_type', 'splice_type', 'cell_type'))]
 
-ressqtl<-fread('../../../data/sn-sQTL/major_cell_FDR_0_05.txt.gz',col.names = c('splice_site', 'variant_ID', 'pval', 'beta', 'se', 'FDR', 'if_significant', 'spliced_genes', 'gene_type', 'splice_type', 'cell_type'))
 ressqtl
 table(ressqtl$splice_type)
 table(ressqtl$cell_type)
@@ -399,7 +519,7 @@ length(unique(ressqtl$splice_site)) #6895/33512 without gene identified for the 
 ressqtlf<-ressqtl[!is.na(gene_name)]
 
 #get gene id
-trans<-fread('/data/resource/references/Homo_sapiens.GRCh38.103.chr.reformatted.collapse_only.gene.region_list')
+trans<-fread(gene_names)
 ressqtlf<-merge(ressqtlf,unique(trans[,.(gene_ID=gene_id,gene_name)]),all.x = TRUE)
 ressqtlf[is.na(gene_ID)]$gene_name|>unique() #121/ 
 ressqtlf$gene_name|>unique()|>length() #121/ 7238 genes without matching gene name on our reference
@@ -407,7 +527,7 @@ ressqtlf$gene_name|>unique()|>length() #121/ 7238 genes without matching gene na
 ressqtlf<-ressqtlf[!is.na(gene_ID)]
 
 #add harmonized context name
-contexts<-fread('contexts_metadata.csv')
+contexts<-fread(contexts_metadata)
 
 ressqtlf<-merge(ressqtlf,unique(contexts[,.(cell_type=context_snsQTL ,context,context_hi)]),by='cell_type')
 
@@ -418,7 +538,7 @@ ressqtlf<-fread(fp(out,'res_sn_sqtl_summ.csv.gz'))
 
 mtd[Method=='LR'&`Data Type`=='sQTL',summary_file:=fp(out,'res_sn_sqtl_summ.csv.gz')]
 
-fwrite(mtd,'metadata_analysis.csv')
+fwrite(mtd,metadata_analysis)
 
 
 
@@ -427,10 +547,11 @@ table(mtd$Method)
 # - xQTLxADs####
 res_c<-rbindlist(lapply(file.path('/data',mtd[Method=='ColocBoost'][Modality=='AD_xQTL_colocalization']$Path),
                         function(f)fread(f)),fill=TRUE)
-res_c[is.na(gene_ID),gene_ID:=region_ID]
+res_c[,gene_ID:=region_ID]
 res_c[,gwas_source:=str_extract(event_ID,'AD_[A-Za-z0-9_]+$')]
 res_c$gwas_source|>table()
 res_c[gwas_source=='AD_Bellenguez',gwas_source:='AD_Bellenguez_2022']
+
 #transform in long format with column gene_id, study, variant_id, vcp,
 res_c2<-merge(res_c[,.(
   variant_ID,
@@ -457,6 +578,9 @@ unique(res_c2$context_coloc)|>sort()|>cat(sep = '\n')
 setdiff(res_c2$context_coloc,contexts$context_coloc)#OK
 
 res_c<-merge(res_c2[,-c('context')],unique(contexts[context_coloc!=''&!str_detect(context,'_u_|_p_')][,.(context_coloc,context)]),by='context_coloc',all.x = T)
+
+res_c[,chr:=seqid(variant_ID)]
+res_c[,pos:=pos(variant_ID)]
 res_c[is.na(context)]#ok
 table(res_c[is.na(context)]$context_coloc)
 
@@ -507,7 +631,7 @@ unique(res_cfs$ge)
 unique(res_cfs$CoS)|>length()
 res_cfs[is.na(CoS)]
 setdiff(res_cfs$context,contexts$context)
-
+res_cfs[is.na(context)]
 res_cfs[,gwas_source:=AD]
 res_cfs$gwas_source|>table()
 #keep only those in CoS
@@ -529,13 +653,403 @@ fwrite(res_cfsf,fp(out,'res_coloc_AD_epiQTL.csv.gz'))
 
 
 #  1-3) AD locis Extension/harmonization with FP and ADmeta coloc ####
-#first run gwas_cs_extension.R
-if(!file.exists(fp(out,'res_all_single_gwas_finemapping_cs50orgreater_unified_withAllCoS_any0.8ANDmin0.5_converged.csv.gz'))){
+
+update_gwas_cs_harmo=FALSE
+if(update_gwas_cs_harmo|!file.exists(fp(out,'res_all_single_gwas_finemapping_cs50orgreater_unified_withAllCoS_any0.8ANDmin0.5_converged.csv.gz'))){
   #export table: RUN export_mr.R
-  stop('need run gwas_cs_extension.R first to continue')
+  library(pecotmr)
+  
+  bed_inter<- function(a, b, opt1="-wa",
+                       opt2="-wb",out_dir=".",
+                       select=NULL, col.names=NULL){
+    require(data.table)
+    l<-list(a,b)
+    #order chr and pos
+    l<-lapply(l, function(x){
+      chr_cols<-colnames(x)[1:2]
+      setorderv(x,chr_cols)
+    })
+    
+    files_to_rm<-c(FALSE,FALSE)
+    file_paths<-sapply(1:2, function(i){
+      x<-l[[i]]
+      if(is.data.frame(x)){
+        files_to_rm[i]<-TRUE
+        file_path<-file.path(out_dir,paste0("temp",i,".bed"))
+        fwrite(x,file_path,sep="\t",col.names = FALSE,scipen = 999)
+        
+      }else{
+        file_path<-x
+      }
+      return(file_path)
+    })
+    
+    out_file<-file.path(out_dir,"temp_inter.bed")
+    cmd<-paste("bedtools intersect -a",file_paths[1],"-b",file_paths[2], opt1, opt2,">",out_file)
+    message("run in shell : ",cmd)
+    system(cmd)
+    message("done.")
+    
+    if(!is.null(col.names)){
+      dt<-fread(out_file,select = select,col.names = col.names)
+      file.remove(out_file)
+      file.remove(file_paths[files_to_rm])
+      return(dt)
+    }else{
+      dt<-fread(out_file,select = select)
+      file.remove(out_file)
+      file.remove(file_paths[files_to_rm])
+      return(dt)
+    }
+  }
+  
+  
+  #if r > 0.8, AND the union of the two CS have min abs(r) > 0.5
+  #first get long table variant1 variant2 r for abs(r)>0.5
+  
+  res_gwf <- fread(fp(out,'res_all_single_gwas_finemapping_cs50orgreater.csv.gz'))
+  res_gwf[,source:='AD_GWAS_finemapping']
+  #bind with ADxQTL, ADAD and fsusie colocs
+  res_c<-fread(fp(out,'res_coloc_AD_xQTL_unified.csv.gz'))
+  res_c[,chr:=seqid(variant_ID)]
+  res_c[,pos:=pos(variant_ID)]
+  res_cad<-fread(fp(out,'res_coloc_meta_AD.csv.gz'))
+  res_cad[,chr:=seqid(variant_ID)]
+  res_cad[,pos:=pos(variant_ID)]
+  
+  res_cfsf<-fread(fp(out,'res_coloc_AD_epiQTL.csv.gz'))
+  res_cfsf[,.(variant_ID,cos_ID,context)]
+  res_cfsf[,chr:=seqid(variant_ID)]
+  res_cfsf[,pos:=pos(variant_ID)]
+  
+  res_cosad<-rbindlist(list(res_c[str_detect(context,'^AD')][,source:='AD_xQTL_colocalization'],
+                            res_cad[,source:='AD_meta_colocalization'],
+                            res_cfsf[,source:='AD_epiQTL_colocalization']),fill=TRUE)
+  all_variants<-Reduce(union,list(res_gwf$variant_ID,res_c$variant_ID,res_cad$variant_ID,res_cfsf$variant_ID))
+  sum(duplicated(seqid(all_variants))&duplicated(pos(all_variants)))#ok
+  
+  #for 1 block
+  # b1<-res_gwf$region[1]
+  # ldblock<-load_LD_matrix('/data/resource/ADSP_R4_EUR_LD/ld_meta_file.tsv',
+  #                         region = data.frame(chr=seqid(b1),
+  #                                             start=start(b1),
+  #                                             end=end(b1)))$combined_LD_matrix
+  # variants<-intersect(rownames(ldblock),res_gwf$variant_id)
+  # variants_dt<-data.table(variant_id=variants)
+  # variants_dt
+  # variants_cors<-variants_dt[,{
+  #   vars_cor<-rownames(ldblock)[abs(ldblock[,variant_id])>0.5]
+  #   
+  #   list(variant2=vars_cor,
+  #        r=ldblock[vars_cor,variant_id])
+  # },by=.(variant_id)]
+  # variants_cors
+  
+  #for all block
+  ldmeta<-fread(ld_meta_file)
+  
+  regions=bed_inter(data.table(chr=seqid(all_variants),
+                               start=pos(all_variants)-1,
+                               end=pos(all_variants),
+                               variant_ID=all_variants)[!is.na(start)],
+                    ldmeta[,.(`#chrom`,start,end,block=paste(`#chrom`,start,end,sep='_'))])[[8]]|>unique()
+  
+  
+  variants_cors<-rbindlist(lapply(1:length(regions),function(i){
+    message(i,'/',length(regions))
+    b=regions[i]
+    ldblock<-load_LD_matrix('/data/resource/ADSP_R4_EUR_LD/ld_meta_file.tsv',
+                            region = data.frame(chr=seqid(b),
+                                                start=start(b),
+                                                end=end(b)))$combined_LD_matrix
+    variants<-intersect(rownames(ldblock),str_remove(all_variants,'chr'))
+    variants_dt<-data.table(variant_id=variants)
+    variants_cors<-variants_dt[,{
+      vars_cor<-rownames(ldblock)[abs(ldblock[,variant_id])>0.5]
+      
+      list(variant2=vars_cor,
+           r=ldblock[vars_cor,variant_id])
+    },by=.(variant_id)]
+    variants_cors[,region:=b][]
+  }))
+  variants_cors[,variant_ID:=paste0('chr',variant_id)]
+  variants_cors[,variant_ID2:=paste0('chr',variant2)]
+  
+  fwrite(variants_cors,fp(out,'gwas_variants_cor0.5.csv.gz'))
+  variants_cors<-fread(fp(out,'gwas_variants_cor0.5.csv.gz'))
+  
+  #if r > 0.8, AND the union of the two CS have min abs(r) > 0.5
+  #per region, iterate in all CS of a GWAS finding if correlation with other GWAS CS meet this condition, if it meet,
+  #extend the CS 
+  variants_corsf<-variants_cors[variant_ID%in%all_variants&variant_ID2%in%all_variants]
+  #iteration 1
+  i<-1
+  gwas_new<-rbindlist(lapply(regions,function(r){
+    message(r)
+    res_gwff<-res_gwf[region==r]
+    #get long table of the CS
+    res_gwff_cs<-melt(res_gwff,measure.vars=c('cs_coverage_0.95',
+                                              'cs_coverage_0.7',
+                                              'cs_coverage_0.5'),
+                      variable.name='coverage',value.name = 'cs_num')
+    res_gwff_cs<-res_gwff_cs[cs_num!=0]
+    
+    #add the coloc sets
+    res_cf<-res_cosad[chr==seqid(r)&pos>=start(r)&pos<=end(r)]
+    
+    res_gwff_cs<-rbind(res_gwff_cs,res_cf,fill=TRUE)
+    
+    #iterate per CS
+    
+    res_gwff_cs_ext<-rbindlist(lapply(unique(res_gwff_cs$locuscontext_id),function(l){
+      message(l)
+      res_gwff_cs_study<-res_gwff_cs[locuscontext_id==l]
+      res_gwff_cs_others<-res_gwff_cs[locuscontext_id!=l]
+      res_gwff_cs_study_ext<-res_gwff_cs_study[,{
+        vars_cs<-variant_ID #the CS
+        #check if this CS have any cor >0.8 with CS from others GWAS and mincorr 0.8
+        #if yes, extract these variants
+        to_add<-res_gwff_cs_others[,to_merge:={
+          other_cs<-variant_ID
+          mincorr50_vars<-variants_corsf[variant_ID%in%vars_cs&variant_ID2%in%other_cs]
+          if(nrow(mincorr50_vars)>0){
+            #any 0.8 between those CS
+            have_highLD<-mincorr50_vars[,any(abs(r)>0.8)]
+            #all variants pairs have r>0.5
+            have_all50<-nrow(mincorr50_vars)==length(other_cs)*length(vars_cs)
+            rep(have_highLD&have_all50,.N) #rep is to return TRUE or FALSE for each Variants of thise CS
+          }else{
+            rep(FALSE,.N)
+          }
+          
+        },
+        by=.(locuscontext_id)][(to_merge)]$variant_ID
+        
+        new<-setdiff(to_add,vars_cs)
+        if(length(new)>0){
+          message(length(new),' variants added')
+          
+        }
+        
+        merged_cs<-union(vars_cs,to_add)
+        
+        data.table(variant_ID=merged_cs)[,original_cs:=variant_ID%in%vars_cs]
+        
+      },by=.(locuscontext_id,source)]
+      
+      return(res_gwff_cs_study_ext)
+    }),fill = TRUE)
+    return(res_gwff_cs_ext[,region:=r])
+  }),fill = TRUE)
+  
+  #iteration 2 and +
+  change<-TRUE
+  while(change){
+    i<-i+1
+    message('iteration ', i)
+    change=FALSE
+    
+    gwas_toploci_old<-copy(gwas_new)
+    gwas_new<-rbindlist(lapply(regions,function(r){
+      message(r)
+      res_gwff_cs<-gwas_new[region==r]
+      
+      #iterate by study
+      res_gwff_cs_ext<-rbindlist(lapply(unique(res_gwff_cs$locuscontext_id),function(l){
+        message(l)
+        res_gwff_cs_study<-res_gwff_cs[locuscontext_id==l]
+        res_gwff_cs_others<-res_gwff_cs[locuscontext_id!=l]
+        #iterate per CS
+        res_gwff_cs_study_ext<-res_gwff_cs_study[,{
+          vars_cs<-variant_ID #the CS
+          vars_original<-variant_ID[(original_cs)]
+          #check if this CS have any cor >0.8 with CS from others GWAS and mincorr 0.8
+          #if yes, extract these variants
+          to_add<-res_gwff_cs_others[,to_merge:={
+            other_cs<-variant_ID
+            mincorr50_vars<-variants_corsf[variant_ID%in%vars_cs&variant_ID2%in%other_cs]
+            if(nrow(mincorr50_vars)>0){
+              #any 0.8 between those CS
+              have_highLD<-mincorr50_vars[,any(abs(r)>0.8)]
+              #all variants pairs have r>0.5
+              have_all50<-nrow(mincorr50_vars)==length(other_cs)*length(vars_cs)
+              rep(have_highLD&have_all50,.N) #rep is to return TRUE or FALSE for each Variants of thise CS
+            }else{
+              rep(FALSE,.N)
+            }
+            
+          },
+          by=.(locuscontext_id)][(to_merge)]$variant_ID
+          new<-setdiff(to_add,vars_cs)
+          if(length(new)>0){
+            message(length(new),' variants added')
+            change<<-TRUE
+            
+          }
+          merged_cs<-union(vars_cs,to_add)
+          
+          data.table(variant_ID=merged_cs)[,original_cs:=variant_ID%in%vars_original]
+          
+        },by=.(locuscontext_id,source)]
+        return(res_gwff_cs_study_ext)
+      }),fill = TRUE)
+      return(res_gwff_cs_ext[,region:=r])
+    }),fill = TRUE)
+    
+    #gwas_new[,cs_num_ext:=ifelse(gwas_toploci_old,cs_num,-cs_num)]
+    ntotadded=nrow(gwas_new[!(original_cs)])
+    message(ntotadded,' total variants added')
+    
+  }
+  
+  
+  message('converged after ',i,' iteration')
+  gwas_new
+  #recreate top_loci table
+  fwrite(gwas_new,fp(out,'all_adlocis_extended_any0.8ANDmin0.5union_withfsusie.csv.gz'))
+  gwas_new<-fread(fp(out,'all_adlocis_extended_any0.8ANDmin0.5union_withfsusie.csv.gz'))
+  
+  #saved back the different methods
+  #FINEMAP
+  table(gwas_new$source)
+  gwas_newf<-gwas_new[source=='AD_GWAS_finemapping']
+  gwas_newf[,study:=strsplit(locuscontext_id,'_chr')[[1]][1],by='locuscontext_id']
+  gwas_newf[,coverage:=ifelse(str_detect(locuscontext_id,'cs95'),'cs_coverage_0.95',
+                              ifelse(str_detect(locuscontext_id,'cs70'),'cs_coverage_0.7',
+                                     'cs_coverage_0.5'))]
+  gwas_newf[,cs_num:=as.numeric(str_extract(locuscontext_id,'[0-9]+$'))]
+  
+  resfp<-dcast(gwas_newf,
+               study+region+variant_ID~coverage,
+               value.var = 'cs_num')
+  #add pip, z
+  mtd<-fread(metadata_analysis,header = T,select = 1:6)
+  
+  res_gw<-rbindlist(lapply(file.path('/data',mtd[Method=='AD_GWAS_finemapping']$Path),function(f)fread(f)),fill = T)
+  res_gw[,study:=event_ID]
+  resfp<-merge(resfp,res_gw[,.(variant_ID,PIP,z,study,cs_coverage_0.95_original=cs_coverage_0.95,
+                               cs_coverage_0.7_original=cs_coverage_0.7, cs_coverage_0.5_original=cs_coverage_0.5)],
+               by=c('study','variant_ID'),all.x = T)
+  resfp[,event_ID:=study]
+  resfp[is.na(cs_coverage_0.95),cs_coverage_0.95:=0]
+  resfp[is.na(cs_coverage_0.7),cs_coverage_0.7:=0]
+  resfp[is.na(cs_coverage_0.5),cs_coverage_0.5:=0]
+  resfp[is.na(cs_coverage_0.95_original),cs_coverage_0.95_original:=0]
+  resfp[is.na(cs_coverage_0.7_original),cs_coverage_0.7_original:=0]
+  resfp[is.na(cs_coverage_0.5_original),cs_coverage_0.5_original:=0]
+  
+  #distrib n.extension 
+  resfp[,n.extension:=sum(cs_coverage_0.95!=cs_coverage_0.95_original),by=.(study,region,cs_coverage_0.95)]
+  summary(unique(resfp[cs_coverage_0.95>0],by=c('study','region','cs_coverage_0.95'))$n.extension)
+  #  Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  # 0.000   0.000   2.000   7.559   6.000 144.000 
+  
+  resfp[,n.extension:=sum(cs_coverage_0.7!=cs_coverage_0.7_original),by=.(study,region,cs_coverage_0.7)]
+  summary(unique(resfp[cs_coverage_0.7>0],by=c('study','region','cs_coverage_0.95'))$n.extension)
+  # Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  #  0.00    0.00    5.00   18.99   23.00  144.00 
+  
+  resfp[!is.na(PIP)]
+  
+  #export
+  #fwrite(resfp,'/adpelle1/export/AD_GWAS_finemapping_109_blocks_top_loci_unified_withAllCoS_any0.8ANDmin0.5_converged.csv.gz')
+  
+  fwrite(resfp,fp(out,'res_all_single_gwas_finemapping_cs50orgreater_unified_withAllCoS_any0.8ANDmin0.5_converged.csv.gz'))
+  
+  #COLOCS
+  table(gwas_new$source)
+  
+  #ADmeta coloc
+  res_cad<-fread(fp(out,'res_coloc_meta_AD.csv.gz'))
+  res_cad[,chr:=seqid(variant_ID)]
+  res_cad[,pos:=pos(variant_ID)]
+  
+  
+  res_cadnew<-gwas_new[source=='AD_meta_colocalization']
+  
+  res_cadnew<-merge(res_cadnew,res_cad,all.x = T,
+                    by=c('locuscontext_id','variant_ID'))
+  res_cadnew[,chr:=seqid(variant_ID)]
+  res_cadnew[,pos:=pos(variant_ID)]
+  
+  res_cadnew<-rbindlist(lapply(unique(res_cad$event_ID),function(g){
+    loci<-unique(res_cosad[event_ID==g]$locuscontext_id)
+    
+    rbind(res_cadnew[locuscontext_id%in%loci&!is.na(event_ID)],res_cadnew[locuscontext_id%in%loci&is.na(event_ID),event_ID:=g][])
+    
+  }))
+  res_cadnew[,context:=event_ID]
+  res_cadnew[,gwas_source:=event_ID]
+  res_cadnew<-unique(res_cadnew)
+  res_cadnew[is.na(locuscontext_id)]
+  table(res_cadnew$locuscontext_id)
+  unique(res_cadnew$locuscontext_id)
+  
+  #extension
+  res_cadnew[,n.extension:=sum(is.na(cos_ID)),by='locuscontext_id']
+  summary(unique(res_cadnew,by=c('locuscontext_id'))$n.extension)
+  # Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  #   0.0     0.0     2.0    21.4    11.0  1036.0 
+  
+  
+  fwrite(res_cadnew,fp(out,'res_coloc_meta_AD_unified_withFP_andAllCoS_any0.8ANDmin0.5_converged.csv.gz'))
+  
+  #ADxQTL coloc
+  res_c<-fread(fp(out,'res_coloc_AD_xQTL_unified.csv.gz'))
+  
+  table(gwas_new$source)
+  table(gwas_new$source)
+  
+  res_cnew<-gwas_new[source=='AD_xQTL_colocalization']
+  unique(res_cnew$locuscontext_id)
+  res_cnew[,context:=paste0('AD_',strsplit(locuscontext_id,'AD_|_ENSG')[[1]][2]),by='locuscontext_id']
+  unique(res_cnew$context)
+  
+  res_cnew<-merge(res_cnew,res_c,all = T,
+                  by=c('locuscontext_id','context','variant_ID'))
+  
+  # res_cnew[,event_ID:=event_ID[!is.na(event_ID)][1],by=.(locuscontext_id,context)]
+  res_cnew[,context_coloc:=context_coloc[!is.na(context_coloc)][1],by=.(locuscontext_id,context)]
+  #res_cnew[,context:=context[!is.na(context)][1],by=.(locuscontext_id,context)]
+  
+  res_cnew[,gwas_source:=gwas_source[!is.na(gwas_source)][1],by=.(locuscontext_id)]
+  
+  
+  #extension
+  res_cnew[,n.extension:=sum(is.na(cos_ID)),by='locuscontext_id']
+  summary(unique(res_cnew,by=c('locuscontext_id'))$n.extension)
+  # Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  #  0.0     3.0    10.0   135.2    49.0  2639.0 
+  
+  res_cnew[is.na(locuscontext_id)]
+  fwrite(res_cnew,fp(out,'res_coloc_AD_xQTL_unified_withFP_andAllCoS_any0.8ANDmin0.5_converged.csv.gz'))
+  
+  #fsusie Coloc
+  res_cfsf<-fread(fp(out,'res_coloc_AD_epiQTL.csv.gz'))
+  table(res_cfsf$context)
+  
+  table(gwas_new$source)
+  
+  res_cfnew<-gwas_new[source=='AD_epiQTL_colocalization']
+  res_cfnew<-merge(res_cfnew,unique(res_cfsf[,.(locuscontext_id,gwas_source)]),by='locuscontext_id')
+  
+  res_cfnew<-merge(res_cfnew,res_cfsf,all = T,
+                   by=c('locuscontext_id','gwas_source','variant_ID'))
+  
+  # res_cfnew[is.na(context)]
+  # res_cfnew[,context:=context[!is.na(context)][1],by=.(locuscontext_id)]
+  
+  #extension
+  res_cfnew[,n.extension:=sum(is.na(cos_ID)),by='locuscontext_id']
+  summary(unique(res_cfnew,by=c('locuscontext_id'))$n.extension)
+  # Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  # 0.00    0.00    3.00   28.31   36.00  284.00 
+  
+  res_cfnew[is.na(locuscontext_id)]
+  fwrite(res_cfnew,fp(out,'res_coloc_AD_epiQTL_unified_withFP_andAllCoS_any0.8ANDmin0.5_converged.csv.gz'))
 }
 
-#Finemapping
+#Finemapping####
 res_gwf<-fread(fp(out,'res_all_single_gwas_finemapping_cs50orgreater_unified_withAllCoS_any0.8ANDmin0.5_converged.csv.gz'))
 
 #create locus_context_id for cs95>cs70>cs50
@@ -576,7 +1090,7 @@ mtd[Method=='AD_GWAS_finemapping',summary_file:=fp(out,'res_all_single_gwas_fine
 # 
 
 
-#ADxQTL coloc
+#ADxQTL coloc####
 res_c<-fread(fp(out,'res_coloc_AD_xQTL_unified_withFP_andAllCoS_any0.8ANDmin0.5_converged.csv.gz'))
 
 #add the coloc locus overlap between studies
@@ -593,14 +1107,13 @@ mtd[Method=='ColocBoost'&Modality=='AD_xQTL_colocalization',summary_file:=fp(out
 mtd[Method=='ColocBoost'&Modality=='AD_xQTL_colocalization']
 
 
-#ADAD colocs
+#ADAD colocs####
 res_cad2<-fread(fp(out,'res_coloc_meta_AD_unified_withFP_andAllCoS_any0.8ANDmin0.5_converged.csv.gz'))
 
 mtd[Method=='ColocBoost'&Modality=='AD_meta_colocalization',summary_file:=fp(out,'res_coloc_meta_AD_unified_withFP_andAllCoS_any0.8ANDmin0.5_converged.csv.gz')]
-mtd[summary_file=='']
 
 
-#fsusie Coloc
+#fsusie Coloc####
 res_cf<-fread(fp(out,'res_coloc_AD_epiQTL_unified_withFP_andAllCoS_any0.8ANDmin0.5_converged.csv.gz'))
 
 #add the coloc locus overlap between studies
@@ -612,18 +1125,19 @@ unique(res_cf$uni.locus_id)#24
 table(res_cf$context)#
 res_cf[context=='']#the extension
 fwrite(res_cf,fp(out,'res_coloc_AD_epiQTL_unified_withFP_andAllCoS_any0.8ANDmin0.5_converged.csv.gz'))
-mtd[Method=='Coloc'][]
-mtd[Method=='Coloc',summary_file:=fp(out,'res_coloc_AD_epiQTL_unified_withFP_andAllCoS_any0.8ANDmin0.5_converged.csv.gz')]
 
+mtd[Method=='Coloc',summary_file:=fp(out,'res_coloc_AD_epiQTL_unified_withFP_andAllCoS_any0.8ANDmin0.5_converged.csv.gz')]
+fwrite(mtd,metadata_analysis)
 
 #  4) the TWAS/MR####
 table(mtd$Method)
+
 res_twas<-fread(file.path('/data',mtd[Method=='twas']$Path))
-setdiff(res_twas$context,res_scf$context)
+setdiff(res_twas$context,contexts$context)
 res_twas[,gene_ID:=str_extract(molecular_id,'ENSG[0-9]+')]
 res_twas[,event_ID:=context]
 res_twas[str_detect(context,'_chr|_un'),context:=strsplit(context[1],'_chr|_gp_')[[1]][1],by='context']
-setdiff(res_twas$context,res_scf$context)#ok
+setdiff(res_twas$context,contexts$context)#ok
 
 res_twas[,gwas_source:=paste0('AD_',gwas_study)]
 res_twas<-res_twas[,-'gwas_study']
@@ -642,12 +1156,69 @@ res_twas<-fread(fp(out,'res_AD_XWAS.csv.gz'))
 
 
 #    - MR####
-if(!any(mtd$Method=='MR')){
-  #export table: RUN export_mr.R
-  stop('need run export_mr.R first to continue')
-}
+# if(!any(mtd$Method=='MR')){
+#   if(mtd[Method=='MR',!file.exists(file.path('/data',Path))]){
+#     #export table: RUN export_mr.R
+#     #for all gene_id
+#     #get file paths
+#     #format: /data/analysis_result/twas/[context].[block].mr_results.tsv.gz
+#     system('ls /data/analysis_result/twas/AD >files_twas_folder.txt')
+#     files<-fread('files_twas_folder.txt',col.names = 'file',header = F)[str_detect(file,'mr_result.tsv.gz$')]
+#     files[,context:=strsplit(file,'\\.')[[1]][1],by='file']
+#     files[,block:=strsplit(file,'\\.')[[1]][2],by='file']
+#     files[,result_type:=strsplit(file,'\\.')[[1]][3],by='file']
+#     
+#     
+#     table(files$context)
+#     filesfa<-merge(files,unique(res_twas[,.(block,gene_ID)]),by = 'block',allow.cartesian = T)
+#     table(filesfa$context)
+#     
+#     mr_res<-rbindlist(lapply(unique(filesfa$file),function(f){
+#       i<-which(unique(filesfa$file)==f)
+#       if(i%%100==0){
+#         message(i,'/',length(unique(filesfa$file)))
+#       }
+#       genes=filesfa[file==f]$gene_ID
+#       p<-fp('/data/analysis_result/twas/',f)
+#       mr<-fread(p)
+#       if(nrow(mr)>0){
+#         return(mr[!is.na(meta_pval)][gene_name%in%genes])
+#         
+#       }else{
+#         return(mr)
+#         
+#       }
+#       
+#       
+#     }),fill=T)
+#     
+#     setnames(mr_res,'gene_id','gene_ID')
+#     
+#     mr_resf<-mr_res[!is.na(gene_ID)]
+#     
+#     #add chr pos of twas
+#     mr_resf<-merge(mr_resf,res_twas[,.(`#chr`,start,end,gene_ID,TADB_start,TADB_end,context)],
+#                    by=c('context','gene_ID'),all.x = T)
+#     
+#     #export
+#     fwrite(mr_resf[order(`#chr`,start)],'/data/interactive_analysis/adpelle1/export/FunGen_mr.exported.bed.gz')
+#     mr_resf<-fread('/data/interactive_analysis/adpelle1/export/FunGen_mr.exported.bed.gz')
+#     
+#     #add to mtd
+#     mtd<-fread(metadata_analysis)
+#     mtd<-rbind(mtd[Method!='MR'],data.table(
+#       'Data Type'='Gene & GWAS',
+#       Cohort='ROSMAP & MSBB & AD',
+#       Method='MR',
+#       Path='interactive_analysis/adpelle1/export/FunGen_mr.exported.bed.gz'),
+#       fill=TRUE)
+#     mtd[Method=='MR']
+#     fwrite(mtd,metadata_analysis)
+#   }
+#  
+# }
 
-res_mr<-fread('/adpelle1/export/FunGen_mr.exported.bed.gz')
+res_mr<-mtd[Method=='MR',fread(file.path('/data',Path))]
 res_mr[str_detect(context,'DLPFC_Bennett_pQTL'),context:='DLPFC_Bennett_pQTL']
 res_mr[!is.na(Q_pval)][duplicated(paste(gene_ID,context,gwas_study))]
 
@@ -668,21 +1239,23 @@ fwrite(res_mrtwas,fp(out,'res_AD_XWAS_MR.csv.gz'))
 fwrite(res_mrtwas[(TWAS_signif)],fp(out,'res_AD_XWAS_MR_filtered_TWAS_sig.csv.gz'))
 
 mtd[Method%in%c('twas','MR'),summary_file:=fp(out,'res_AD_XWAS_MR_filtered_TWAS_sig.csv.gz')]
+fwrite(mtd,metadata_analysis)
 
 #cTWAS####
 #$cs column not left blank (having values such as L1 L2 L3... 
 #although the $pip can be small) and also check $pip column values being greater than 0.75
-contexts<-fread(fp(out,'contexts_metadata.csv'))
+contexts<-fread(fp(out,contexts_metadata))
+'/data/analysis_result/ctwas/export/'
 res_ctwas<-fread(file.path('/data',mtd[Method=='cTWAS']$Path))
 
-res_ctwas[cs!=''&susie_pip>0.75]$molecular_id|>unique() #76
-res_ctwas[cs!=''&susie_pip>0.75]$context|>unique()
+res_ctwas[cs!=''&susie_pip>0.75]$gene_name|>unique() #68
+res_ctwas[cs!=''&susie_pip>0.75]$context|>unique() #11
 
 setdiff(res_ctwas$context,contexts$context)#OK
-setnames(res_ctwas,'molecular_id','gene_ID')
+setnames(res_ctwas,'gene_id','gene_ID')
 
 res_ctwasf<-res_ctwas[cs!=''&susie_pip>0.75]
-res_ctwasf<-res_ctwasf[,-c('group','type')]
+res_ctwasf<-res_ctwasf[,-c('group','type','gene_name')]
 res_ctwasf[,cTWAS_signif:=TRUE]
 res_ctwasf[(cTWAS_signif)]
 
@@ -690,6 +1263,7 @@ fwrite(res_ctwasf,fp(out,'res_AD_cTWAS_pip075.csv.gz'))
 res_ctwasf<-fread(fp(out,'res_AD_cTWAS_pip075.csv.gz'))
 
 mtd[Method%in%c('cTWAS'),summary_file:=fp(out,'res_AD_cTWAS_pip075.csv.gz')]
+fwrite(mtd,metadata_analysis)
 
 
 #Metadata of harmonized analysis check and saving####
@@ -699,30 +1273,30 @@ unique(mtd[!is.na(summary_file)][,.(Method,summary_file)])
 #confirm all have variant_ID, gene_ID, context, locuscontext_id
 cols_to_check<-c('variant_ID', 'gene_ID', 'context','locuscontext_id')
 
-unique(mtd[!is.na(summary_file)][,.(Method,summary_file)])[,{
+unique(mtd[!is.na(summary_file)&summary_file!=''][,.(Method,summary_file)])[,{
   message(summary_file[1])
   missing<-setdiff(cols_to_check,colnames(fread(summary_file[1],nrows = 1)))
   if(length(missing)>0){
-    warning('missing ',paste(missing,collapse = ' '))
+    message('missing ',paste(missing,collapse = ' '))
     
   }else{
     message('OK')
   }
 },by='summary_file']
 
-#ok except TWAS/MR for variant_ID and locuscontext_id but normal
+#ok except TWAS/MR/cTWAS for variant_ID and locuscontext_id, interaction/QR lacking locuscontext_id, and epiQTL lacking gene_id but normal
 mtd[,variant_level_method:=!Method%in%c('MR','twas','cTWAS')]
-fwrite(mtd,'metadata_analysis.csv')
+fwrite(mtd,metadata_analysis)
 
 
 #II) get unified 'AD associated' loci ####
 #outputs:ADlocus variant ADlocus_event ADmethod
 #here we want to integrate GWAS locus found in i) single gwas finemapping, ii) ADxQTL coloc, iii) ADxAD colocs
-mtd<-fread('metadata_analysis.csv')
+mtd<-fread(metadata_analysis)
 mtd[summary_file=='']
 
 res_gwf<-fread(mtd[Method=='AD_GWAS_finemapping']$summary_file[1])
-unique(mtd$Modality)
+
 res_cad<-fread(mtd[Modality=='AD_xQTL_colocalization']$summary_file[1])[str_detect(context,'^AD')]
 
 res_cad2<-fread(mtd[Modality=='AD_meta_colocalization']$summary_file[1])
@@ -751,6 +1325,7 @@ res_ad<-rbindlist(lapply(unique(res_ad$gwas_source),function(g){
                                          gwas_zscore=z)],
           all.x = T,by='variant_ID')
   }else{
+    message(g,' zscores not found')
     res_ad[gwas_source==g]
   }
   
@@ -805,11 +1380,11 @@ res_ad[order(variant_ID,-variant_inclusion_probability),gwas_sources_effects:=pa
 
 # remove variants with min_pval>1e-5 or in cs70 or cs50 only
 res_adf<-res_ad[ADlocus%in%ADlocus[min_pval<1e-5]]
-unique(res_adf$ADlocusID) #203/249
+unique(res_adf$ADlocusID) #183
 #only cs95 or coloc
 res_adf<-res_adf[ADlocusID%in%ADlocusID[susie_coverage=='cs95'|str_detect(GWAS_methods,'coloc')]]
-length(unique(res_adf$ADlocusID)) #197/249
-unique(res_adf[min_pval<5e-8]$ADlocusID)|>length() #103
+length(unique(res_adf$ADlocusID)) #183
+unique(res_adf[min_pval<5e-8]$ADlocusID)|>length() #90
 unique(res_adf[susie_coverage=='cs95']$ADlocusID)|>length()  #88
 res_adf[is.na(is.cs95),is.cs95:=FALSE]
 
@@ -848,7 +1423,7 @@ unique(res_adfv[str_detect(GWAS_methods,'Fsusie')],by='ADlocusID')|>nrow()#18
 unique(res_adfv[GWAS_methods=='ADFsusie_coloc'],by='ADlocusID')|>nrow()#2
 
 #add v2f score
-files<-list.files('/data/analysis_result/cv2f/score/xqtl_feature_max_allcv2f/',pattern = '.cv2f$',full.names = TRUE)
+files<-list.files(cv2f_score_dir,pattern = '.cv2f$',full.names = TRUE)
 v2f<-rbindlist(lapply(files,function(f)fread(f)))
 v2f[!str_detect(SNP,'rs')]
 res_adfv<-merge(res_adfv,v2f[,.(chr=CHR,pos=BP,cV2F,SNP)],
@@ -867,22 +1442,20 @@ fwrite(res_adfv[order(locus_index)],fp(out,'AD_loci_unified_cs95orColocs_Pval1e5
 res_adfv<-fread(fp(out,'AD_loci_unified_cs95orColocs_Pval1e5_variant_level.csv.gz'))
 
 #export
-fwrite(res_adfv[order(locus_index)],'/projectnb/tcwlab/LabMember/adpelle1/projects/xqtl-resources/data/genes/AD_loci_unified_cs95orColocs_Pval1e5_variant_level.csv.gz')
+fwrite(res_adfv[order(locus_index)],'../../../../../xqtl-resources/data/genes/AD_loci_unified_cs95orColocs_Pval1e5_variant_level.csv.gz')
 
 
 
 
 #III) Get the merged long variant-level table  AD xQTL overlap: each row a variant-ADlocus-Method-context-gene####
 #add those ADlocus annot to all variant level summ table
-mtd<-fread(fp(out,'metadata_analysis.csv'))
+mtd<-fread(fp(out,metadata_analysis))
 res_adfv<-fread(fp(out,'/AD_loci_unified_cs95orColocs_Pval1e5_variant_level.csv.gz'))
-update_summary_ad=TRUE
+update_summary_ad=FALSE
 
-mtd[!file.exists(summary_file)&file.exists(file.path('/adpelle1/xqtl-paper/analyses_summary/',basename(summary_file))),summary_file:=file.path('/adpelle1/xqtl-paper/analyses_summary/',basename(summary_file))]
-mtd[summary_file=="/adpelle1/xqtl-paper/analyses_summary//",summary_file:=NA]
 mtd[file.exists(summary_file),summary_file_ad:=paste0(tools::file_path_sans_ext(summary_file[1],compression = T),'_overlapADloci.csv.gz'),by='summary_file']
 
-mtd[file.exists(summary_file)]
+mtd[!file.exists(summary_file)&summary_file!='']
 
 #first check if need flipping to harmonize variant_ID
 mismatches<-unique(mtd,by='summary_file')[file.exists(summary_file)&(variant_level_method),{
@@ -902,13 +1475,17 @@ mismatches<-unique(mismatches)
 unique(mismatches$variant_ID)#213/5318 variants mismatch
 unique(mismatches[,.(variant_id,variant_ID)])
 
-effect_cols<-c('conditional_effect','coef','effect_direction','top_effect','beta')
+effect_cols<-c('conditional_effect','coef','effect_direction','top_effect','beta','z')
 
-mismatches[,to_flip:=ref(variant_id)==alt(variant_ID)|alt(variant_id)==ref(variant_ID)]
+mismatches[,to_flip:=ref(variant_id)==alt(variant_ID)&alt(variant_id)==ref(variant_ID)]
 mismatches[(to_flip)]
+mismatches[ref(variant_id)==alt(variant_ID)&alt(variant_id)!=ref(variant_ID)]
 table(mismatches[(to_flip)]$context)
 table(mismatches[(to_flip)]$Method)
 table(mismatches[(to_flip)][,paste(Method,context)])
+fwrite(mismatches,'variants_to_flip.csv.gz')
+mismatches<-fread('variants_to_flip.csv.gz')
+toflip<-mismatches[(to_flip)]$variant_id
 
 #Annotate each variant level Methods table  with the AD Loci
 
@@ -921,33 +1498,33 @@ mtd[file.exists(summary_file)&(variant_level_method),{
     res[,pos:=pos(variant_ID)]
     res[,variant_id:=variant_ID]
     
-    if('locuscontext_id'%in%colnames(res)){
-      #n.variants
-      res[,n.variant.locus:=.N,by='locuscontext_id']
-    }
-    res<-merge(res[,-c('ADlocus','locus_index','ADlocusID','variant_ID')],
-               res_adfv[,.(variant_ID,chr,pos,ADlocus,locus_index,ADlocusID)],
-               all.x=T,by=c('chr','pos'))
-    
-    res[,is.in.ad.locus:=!is.na(ADlocus)]
-    
-    res[is.na(variant_ID),variant_ID:=variant_id]
-    
-    if(nrow(mismatches)>0){
-      #flip effect if needed
+    if(any(unique(res$variant_id)%in%toflip)){
+      #flip variant_ID
+      res<-rbind(res[!variant_id%in%toflip],
+                 merge(res[variant_id%in%toflip][,-'variant_ID'],unique(mismatches[,.(variant_id,variant_ID)]),by='variant_id'))
+      #flip effect
       effect_colsf<-intersect(effect_cols,colnames(res))
       if(length(effect_colsf)>0){
-        variants_to_flip<-intersect(res$variant_id,mismatches[(to_flip)]$variant_id)
+
+          res<-rbind(res[!variant_id%in%toflip],
+                     res[variant_id%in%toflip,(effect_colsf):=lapply(.SD,function(x)-x),.SDcols = effect_colsf]
+                     )
         
-        if(length(variants_to_flip)>0){
-          res<-rbind(res[variant_id%in%variants_to_flip,(effect_colsf):=lapply(.SD,function(x)-x),.SDcols = effect_colsf],
-                     res[!variant_id%in%variants_to_flip])
-        }
         
       }
     }
     
+    if('locuscontext_id'%in%colnames(res)){
+      #n.variants
+      res[,n.variant.locus:=.N,by='locuscontext_id']
+    }
+    res<-merge(res[,-c('ADlocus','locus_index','ADlocusID','chr','pos')],
+               res_adfv[,.(variant_ID,chr,pos,ADlocus,locus_index,ADlocusID)],
+               all.x=T,by=c('variant_ID'))
     
+    res[,is.in.ad.locus:=!is.na(ADlocus)]
+    
+    res[is.na(variant_ID),variant_ID:=variant_id]
     
     if('locuscontext_id'%in%colnames(res)){
       
@@ -970,13 +1547,13 @@ mtd[file.exists(summary_file)&(variant_level_method),{
 },by=c('summary_file')]
 
 
-fwrite(mtd,'metadata_analysis.csv')
+fwrite(mtd,metadata_analysis)
+#get the long AD overlap table####
 
-mtd<-fread('metadata_analysis.csv')
+mtd<-fread(metadata_analysis)
 res_adfv<-fread(fp(out,'AD_loci_unified_cs95orColocs_Pval1e5_variant_level.csv.gz'))
 
 
-#get the long AD overlap table
 res_adx<-rbindlist(lapply(unique(mtd[file.exists(summary_file_ad)&(variant_level_method)]$summary_file_ad),function(f){
   message(f)
   m=mtd[summary_file_ad==f]$Method[1]
@@ -1061,7 +1638,7 @@ if(!file.exists(summary_file_ad)|update_twasad){
   unique(res_twadf$gene_ID)
   fwrite(res_twadf,summary_file_ad)
   mtd[Method%in%c('twas','MR'),summary_file_ad:=..summary_file_ad]
-  fwrite(mtd,'metadata_analysis.csv')
+  fwrite(mtd,metadata_analysis)
 }
 
 
@@ -1086,7 +1663,7 @@ if(!file.exists(summary_file_ad)|update_ctwasad){
   unique(res_ctwadf$gene_ID)
   fwrite(res_ctwadf,summary_file_ad)
   mtd[Method%in%c('cTWAS'),summary_file_ad:=..summary_file_ad]
-  fwrite(mtd,'metadata_analysis.csv')
+  fwrite(mtd,metadata_analysis)
 }
 
 # #lacking AD genes are of interest ?
@@ -1144,7 +1721,7 @@ res_adx[str_detect(event_ID,':UP:')]$context
 
 
 #add the context broad and short
-contexts<-fread('contexts_metadata.csv')
+contexts<-fread(contexts_metadata)
 setdiff(res_adx$context,contexts$context) 
 setdiff(contexts$context,res_adx$context)
 
@@ -1156,19 +1733,18 @@ table(res_adx[,.(Method,context_short)])
 
 
 #add GENE info tss /tes
-update_geneinfo=FALSE
-if(update_geneinfo){
-  trans<-fread('/data/resource/references/Homo_sapiens.GRCh38.103.chr.reformatted.collapse_only.gene.region_list')
+if(!file.exists(file.path(out,'genes_infos.csv.gz'))){
+  trans<-fread(gene_names)
   
-  gtf<-fread('/data/resource/references/Homo_sapiens.GRCh38.103.chr.reformatted.collapse_only.gene.gtf',
+  gtf<-fread(gene_gtf,
              select = c(1,3,4,5,7,9),col.names = c('chr','biotype','start','end','sens','info'))
   gtf[,gene_id:=str_extract(info,'ENSG[0-9]+')]
   trans<-merge(trans,gtf[biotype=='gene'][,.(gene_id,tss=ifelse(sens=='+',start,end),tes=ifelse(sens=='+',end,start))])
   setnames(trans,'gene_id','gene_ID')
   trans<-unique(trans,by='gene_ID')
-  fwrite(trans,fp(out,'genes_infos.csv.gz'))
+  fwrite(trans,file.path(out,'genes_infos.csv.gz'))
 }else{
-  trans<-fread(fp(out,'genes_infos.csv.gz'),tmpdir = '/adpelle1/tmp/')
+  trans<-fread(file.path(out,'genes_infos.csv.gz'),tmpdir = '/adpelle1/tmp/')
 }
 
 res_adx<-merge(res_adx[,-c('tss','tes','gene_name')],trans[,-c('start','end','#chr')],all.x = T,by='gene_ID')
@@ -1235,32 +1811,32 @@ table(res_adx$Method)
 
 
 
-#OPTIONAL
-#keep only columns of interest
-# #filter cols: keep only AD locus, gene, method, context, variant_id and gwas infos,  and key method specific infos
-colnames(res_adx)|>cat(sep='\n')
-
-if(file.exists('long_table_columns_selection.csv')){
-  
-  cols<-fread('long_table_columns_selection.csv')$column_name
-  setdiff(cols,colnames(res_adx))
-  setdiff(colnames(res_adx),cols)
-  
-  colsf<-intersect(cols,colnames(res_adx))
-  res_adxf<-res_adx[,..colsf]
-  res_adxf<-res_adxf[order(locus_index)]
-  res_adxf
-  
-  fwrite(res_adxf,fp(out,'res_allanalysis_ADloci_overlap_selectedcols.csv.gz'))
-  
-}
+# #OPTIONAL
+# #keep only columns of interest
+# # #filter cols: keep only AD locus, gene, method, context, variant_id and gwas infos,  and key method specific infos
+# colnames(res_adx)|>cat(sep='\n')
+# 
+# if(file.exists('long_table_columns_selection.csv')){
+#   
+#   cols<-fread('long_table_columns_selection.csv')$column_name
+#   setdiff(cols,colnames(res_adx))
+#   setdiff(colnames(res_adx),cols)
+#   
+#   colsf<-intersect(cols,colnames(res_adx))
+#   res_adxf<-res_adx[,..colsf]
+#   res_adxf<-res_adxf[order(locus_index)]
+#   res_adxf
+#   
+#   fwrite(res_adxf,fp(out,'res_allanalysis_ADloci_overlap_selectedcols.csv.gz'))
+#   
+# }
 
 
 
 
 
 #IV) WIDE TABLE CREATION  ####
-res_adx<-fread(fp(out,'xQTL_all_methods_overlap_with_AD_loci_unified_cs95orColocs_Pval1e5.csv.gz'))
+res_adx<-fread(fp(out,'xQTL_all_methods_overlap_with_AD_loci_unified_cs95orColocs_Pval1e5.csv.gz'),tmpdir = '/adpelle1/tmp/')
 
 res_adxub<-WideTable(res_adx,split.by=c('context_broad2','qtl_type'))
 res_adxub[locus_index==152][gene_name=='ARL17A']$xQTL_effects|>unique()
@@ -1310,9 +1886,9 @@ res_loc[gwas_significance=='p<5e-8']|>nrow()
 #Main Excel Sheet creation ####
 #get the columns metadata ready
 
-cols<-fread(fp(out,'columns_metadata.tsv'))[(keep==1)]
-colsmtd<-fread(fp(out,'excel_metadata.tsv'))
-colorsmtd<-fread(fp(out,'pattern_coloring.tsv'))
+cols<-fread(fp(out,columns_metadata))[(keep==1)]
+colsmtd<-fread(fp(out,excel_metadata))
+colorsmtd<-fread(fp(out,pattern_coloring))
 
 cols<-PrepColsMtd(cols,colsmtd,res_adxubf)
 unique(cols[,.(parent_column,grandparent_column)])|>tail(100)
@@ -1323,7 +1899,7 @@ setdiff(colnames(res_adxubf),cols$r_name)
 wb<-CreateExcelFormat(res_adxubf,columns_mtd =cols,
                       colors = colorsmtd)
 
-saveWorkbook(wb, fp(out,'unified_AD_loci_xQTL_summary.xlsx'), overwrite = TRUE)
+saveWorkbook(wb, fp(out,'unified_AD_loci_xQTL_summary_202605.xlsx'), overwrite = TRUE)
 
 #One sheet per broad context Creation #####
 #split per context keeping central information 

@@ -247,18 +247,48 @@ SummarizeTable<-function(res_adx,
   res_adx[,context_xqtl:=context[which.max(variant_inclusion_probability_xqtl)],by=c('variant_ID','gene_ID',group.by)]
   res_adx[,n.variant_xqtl:=n.variant.locus[which.max(variant_inclusion_probability_xqtl)],by=c('variant_ID','gene_ID',group.by)]
   res_adx[,effect_xqtl:=ifelse(str_detect(Method,'fSuSiE'),top_effect,ifelse(str_detect(Method,'finemapping'),conditional_effect,coef))[which.max(variant_inclusion_probability_xqtl)],by=c('variant_ID','gene_ID',group.by)]
-  res_adx[,coverage_xqtl:=str_extract(credibleset,'cs[0-9]+')[which.max(variant_inclusion_probability_xqtl)],by=c('variant_ID','gene_ID',group.by)]
+  
+  res_adx[,coverage_xqtl:=str_extract(credibleset,'cs[0-9]+')[which.max(PIP)],by=c('variant_ID','gene_ID',group.by)]
   
   
   #add transQTL infos
-  res_adx[,have_trans_effect:=any(Method=='trans_finemapping'),by=.(variant_ID)]
+  #standard
+  res_adx[,have_trans_effect:=any(str_detect(Method,'trans')),by=.(variant_ID)]
   res_adx[order(-have_trans_effect,-PIP),n_trans_genes:=length(unique(gene_name[Method=='trans_finemapping'&gene_name!=''])),by=.(variant_ID)]
   res_adx[order(-have_trans_effect,-PIP),trans_genes:=paste(unique(gene_name[Method=='trans_finemapping'&gene_name!='']),collapse = '|'),by=.(variant_ID)]
-  
   res_adx[order(-have_trans_effect,-PIP),n_trans_contexts:=length(unique(context[Method=='trans_finemapping'&context!=''])),by=.(variant_ID)]
   res_adx[order(-have_trans_effect,-PIP),trans_contexts:=paste(unique(context[Method=='trans_finemapping'&context!='']),collapse = '|'),by=.(variant_ID)]
   
   
+   #others trans
+  #snuc
+  res_adx[order(-have_trans_effect,-PIP),n_trans_genes_snRNA:=length(unique(gene_name[Method=='trans_single_gene_snRNA'&gene_name!=''])),by=.(variant_ID)]
+  res_adx[order(-have_trans_effect,-PIP),trans_genes_snRNA:=paste(unique(gene_name[Method=='trans_single_gene_snRNA'&gene_name!='']),collapse = '|'),by=.(variant_ID)]
+  res_adx[order(-have_trans_effect,-PIP),trans_contexts_snRNA:=paste(unique(context[Method=='trans_single_gene_snRNA'&context!='']),collapse = '|'),by=.(variant_ID)]
+  
+  #pqtl
+  res_adx[order(-have_trans_effect,-PIP),n_trans_genes_pQTL:=length(unique(gene_name[Method=='trans_pQTL'&gene_name!=''])),by=.(variant_ID)]
+  res_adx[order(-have_trans_effect,-PIP),trans_genes_pQTL:=paste(unique(gene_name[Method=='trans_pQTL'&gene_name!='']),collapse = '|'),by=.(variant_ID)]
+  res_adx[order(-have_trans_effect,-PIP),trans_contexts_pQTL:=paste(unique(context[Method=='trans_pQTL'&context!='']),collapse = '|'),by=.(variant_ID)]
+  
+  #gpqtl
+  res_adx[order(-have_trans_effect,-PIP),n_trans_genes_gpQTL:=length(unique(gene_name[Method=='trans_gpQTL'&gene_name!=''])),by=.(variant_ID)]
+  res_adx[order(-have_trans_effect,-PIP),trans_genes_gpQTL:=paste(unique(gene_name[Method=='trans_gpQTL'&gene_name!='']),collapse = '|'),by=.(variant_ID)]
+  res_adx[order(-have_trans_effect,-PIP),trans_contexts_gpQTL:=paste(unique(context[Method=='trans_gpQTL'&context!='']),collapse = '|'),by=.(variant_ID)]
+  
+  #programs based
+  res_adx[Method=='trans_cca']$event_ID
+  res_adx[Method=='trans_cca',program:=str_extract(event_ID,'Program_[0-9]+')]
+  res_adx[order(-have_trans_effect,-PIP),n_trans_cca_programs:=length(unique(program[Method=='trans_cca'&program!=''])),by=.(variant_ID)]
+  res_adx[order(-have_trans_effect,-PIP),trans_cca_programs:=paste(unique(program[Method=='trans_cca'&program!='']),collapse = '|'),by=.(variant_ID)]
+  res_adx[order(-have_trans_effect,-PIP),trans_contexts_cca_programs:=paste(unique(context[Method=='trans_cca'&context!='']),collapse = '|'),by=.(variant_ID)]
+  
+  res_adx[Method=='trans_hotspot']$event_ID
+  res_adx[Method=='trans_hotspot',program:=paste(str_extract(event_ID,'minNumGene[0-9]+'),str_extract(event_ID,'module_[0-9]+_WPC[0-9]+'),sep='_')]
+  res_adx[order(-have_trans_effect,-PIP),n_trans_hotspot_programs:=length(unique(program[Method=='trans_hotspot'&program!=''])),by=.(variant_ID)]
+  res_adx[order(-have_trans_effect,-PIP),trans_hotspot_programs:=paste(unique(program[Method=='trans_hotspot'&program!='']),collapse = '|'),by=.(variant_ID)]
+  res_adx[order(-have_trans_effect,-PIP),trans_contexts_hotspot_programs:=paste(unique(context[Method=='trans_hotspot'&context!='']),collapse = '|'),by=.(variant_ID)]
+
   
   #mv genes
   res_adx[!str_detect(context,'^AD'),mv_genes:=paste(unique(gene_name[Method=='multi_gene_finemapping'&!gene_name=='']),collapse = '|'),by=.(variant_ID,ADlocus)]
@@ -425,7 +455,7 @@ WideTable<-function(res_adx,split.by=c('context_broad2','qtl_type')){
   #Get the variant level summary table####
   #ORDER: Order locus per gene and variant importance, keeping the top context for each variant
   
-  res_adxu<-unique(res_adx[Method!='trans_finemapping'][order(locus_index,
+  res_adxu<-unique(res_adx[!str_detect(Method,'trans')][order(locus_index,
                                                               confidence_lvl,n_study,
                                                               -abs(twas_z_gene_max),
                                                               cV2F_rank,variant_rank_xqtl)],
