@@ -1808,7 +1808,10 @@ unique(res_adx[,.(context,context_short)])
 
 fwrite(res_adx,fp(out,'xQTL_all_methods_overlap_with_AD_loci_unified_cs95orColocs_Pval1e5.csv.gz'))
 table(res_adx$Method)
+#no Trans
+res_adx<-fread(fp(out,'xQTL_all_methods_overlap_with_AD_loci_unified_cs95orColocs_Pval1e5.csv.gz'))
 
+fwrite(res_adx[!str_detect(Method,'trans')],fp(out,'xQTL_all_methods_overlap_with_AD_loci_unified_cs95orColocs_Pval1e5_noTrans.csv.gz'))
 
 
 # #OPTIONAL
@@ -1841,7 +1844,7 @@ res_adx<-fread(fp(out,'xQTL_all_methods_overlap_with_AD_loci_unified_cs95orColoc
 res_adxub<-WideTable(res_adx,split.by=c('context_broad2','qtl_type'))
 res_adxub[locus_index==152][gene_name=='ARL17A']$xQTL_effects|>unique()
 res_adxub[gene_name=='KNOP1'][is.na(locus_index)]|>nrow()
-res_adxub[gene_name=='KNOP1'][,.(variant_ID,locus_index,xQTL_effects,gene_name,Method)]
+res_adxub[gene_name=='KNOP1'][,.(variant_ID,locus_index,xQTL_effects,gene_name,Method,coverage_xqtl)]
 res_adxub[variant_ID=='chr17:45667624:C:T'&gene_name=='ARL17A'][,.(TWAS_signif_gene,xQTL_effects)]
 
 fwrite(res_adxub,fp(out,'res_AD_variants_xQTL.csv.gz'))
