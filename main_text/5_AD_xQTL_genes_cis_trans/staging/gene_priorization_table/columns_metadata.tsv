@@ -40,10 +40,10 @@ effect_xqtl	effect				7	1	0	0	0
 n.variant_xqtl	# variants within the loci				7	1	0	0	0				
 n_contexts	# molecular contexts (datasets)	xQTLs contexts associated			6	1	0	0	0				
 top_confidence	max confidence level				6	1	0	0	0				
+coverage_xqtl	max xQTL credible set coverage				7	1	0	0	0				
 xQTL_effects	Ordered contexts (confidence level , n datasets)				7	1	1	1	0				
 xQTL_contexts	datasets	All datasets associated to this variant			12	1	0	0	0				
 xQTL_methods	Methods				7	1	0	0	0				
-coverage_xqtl	Credible set coverage				7	1	0	0	0				
 n_trans_genes	# trans genes	trans xQTL effect			7	1	0	0	0				
 trans_genes	genes				8	1	0	1	0				
 n_trans_contexts	# trans contexts				8	1	0	1	0				
