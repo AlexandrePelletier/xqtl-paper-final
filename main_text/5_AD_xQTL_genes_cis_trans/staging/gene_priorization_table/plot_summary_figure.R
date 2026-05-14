@@ -8,19 +8,9 @@ library(ggtext)
 library(patchwork)
 library(RColorBrewer)
 
-contexts_order<-c('Exc eQTL','Exc sQTL',
-                  'Inh eQTL','Inh sQTL',
-                  'Oli eQTL','Oli sQTL',
-                  'OPC eQTL','OPC sQTL',
-                  'Ast eQTL','Ast caQTL','Ast sQTL',
-                  'Mic eQTL','Mic caQTL', 'Mic sQTL',
-                  'Peri eQTL','End eQTL',
-                  'Immune eQTL',
-                  'bulk eQTL',
-                  'bulk sQTL',
-                  'bulk (g)pQTL',
-                  'bulk epiQTL')
+context_groups=fread('context_groups_summfigure.tsv')
 
+contexts_order=unique(context_groups$context_group)
 
 #INPUT####
 gwas_ncases_controls='/adpelle1/xqtl-resources/data/GWAS/gwas_n_cases_control.tsv'
@@ -103,6 +93,7 @@ res_adx[,top_confidence:=str_extract(xQTL_effects,'CL[0-9]')]
 #for fp: high if cs95, coloc : high if npc > 0.95, TWAS: MR
 table(res_adx$Method)
 table(res_adx$context_short)
+setdiff(res_adx$context_short,contexts_order)
 table(res_adx$context)
 
 
@@ -568,12 +559,9 @@ levels(res_adxloc_gwas$gwas_short2)
 
 
 # group some contexts
-res_adxloc[,context_group:=ifelse(context_short%in%c('bMono eQTL','bMac eQTL','bMic eQTL'),'Immune eQTL',
-                                    ifelse(context_short%in%c( 'bulk p-sQTL','bulk u-sQTL','bulk a-sQTL'),'bulk sQTL',
-                                           ifelse(context_short%in%c('bulk pQTL','bulk gpQTL'),'bulk (g)pQTL',
-                                                  ifelse(context_short%in%c('bulk haQTL','bulk mQTL'),'bulk epiQTL',as.character(context_short)))))]
+res_adxloc<-merge(res_adxloc,context_groups,by='context_short')
 
-res_adxloc<-res_adxloc[context_group!='']
+res_adxloc<-res_adxloc[!is.na(context_group)]
 # summarize using confidence score  and nstudy
 res_adxloc[,n_study_group:=length(unique(context)),by=.(gene_name,context_group)]
 res_adxloc[,confidence_lvl_group:=sort(confidence_lvl)[1],by=.(gene_name,context_group)]
